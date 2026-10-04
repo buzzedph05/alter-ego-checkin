@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Alter Ego Check-In</title>
+
+  <script src="https://unpkg.com/html5-qrcode"
+          type="text/javascript"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 10px 0 5px;
+      letter-spacing: 2px;
+    }
+
+    .subtitle {
+      color: #aaa;
+      margin-bottom: 25px;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto 20px;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    input {
+      width: 90%;
+      max-width: 400px;
+      padding: 14px;
+      font-size: 18px;
+      border-radius: 8px;
+      border: none;
+      margin: 8px 0;
+      text-align: center;
+    }
+
+    button {
+      padding: 14px 25px;
+      font-size: 18px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 5px;
+    }
+
+    #result {
+      margin: 20px auto;
+      max-width: 500px;
+      padding: 25px;
+      border-radius: 12px;
+      display: none;
+    }
+
+    .success {
+      background: #123d20;
+      border: 3px solid #20c45a;
+    }
+
+    .already {
+      background: #4a3510;
+      border: 3px solid #ffb000;
+    }
+
+    .invalid {
+      background: #4a1515;
+      border: 3px solid #ff3333;
+    }
+
+    .error {
+      background: #333;
+      border: 3px solid #aaa;
+    }
+
+    .big {
+      font-size: 30px;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+
+    .info {
+      font-size: 18px;
+      line-height: 1.7;
+    }
+
+    .scan-again {
+      background: white;
+      color: black;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>ALTER EGO</h1>
+
+  <div class="subtitle">
+    OFFICIAL EVENT CHECK-IN
+  </div>
+
+  <div id="reader"></div>
+
+  <p>Or enter Registration ID manually:</p>
+
+  <input
+    id="manualID"
+    type="text"
+    placeholder="BZ-XXXXXX"
+    autocomplete="off"
+  >
+
+  <br>
+
+  <button onclick="manualCheckIn()">
+    CHECK IN
+  </button>
+
+  <div id="result"></div>
+
+  <script>
+
+    // YOUR EXISTING GOOGLE APPS SCRIPT WEB APP
+    var APPS_SCRIPT_URL =
+      "https://script.google.com/macros/s/AKfycbyEKsBwGu_hJ0HPmSIsrpUVmbfRWScpBQIytLUzQxRxFH6N7f1GjVxAhSs4pM2vunmPDw/exec";
+
+    var scanner = null;
+    var processing = false;
+
+    function startScanner() {
+
+      processing = false;
+
+      if (scanner) {
+        try {
+          scanner.clear();
+        } catch (e) {}
+      }
+
+      scanner = new Html5Qrcode("reader");
+
+      scanner.start(
+
+        { facingMode: "environment" },
+
+        {
+          fps: 10,
+          qrbox: {
+            width: 250,
+            height: 250
+          }
+        },
+
+        function(decodedText) {
+
+          if (processing) {
+            return;
+          }
+
+          processing = true;
+
+          scanner.stop().then(function() {
+            checkTicket(decodedText);
+          }).catch(function() {
+            checkTicket(decodedText);
+          });
+
+        },
+
+        function(errorMessage) {
+          // Normal scanning errors are ignored.
+        }
+
+      ).catch(function(error) {
+
+        showResult(
+          "ERROR",
+          "<div class='big'>CAMERA ERROR</div>" +
+          "<div class='info'>" +
+          "Please allow camera access.<br><br>" +
+          "You can also enter the Registration ID manually." +
+          "</div>"
+        );
+
+      });
+    }
+
+
+    function manualCheckIn() {
+
+      var id = document
+        .getElementById("manualID")
+        .value
+        .trim();
+
+      if (!id) {
+
+        showResult(
+          "ERROR",
+          "<div class='big'>ENTER ID</div>" +
+          "<div class='info'>Please enter a Registration ID.</div>"
+        );
+
+        return;
+      }
+
+      if (processing) {
+        return;
+      }
+
+      processing = true;
+
+      checkTicket(id);
+    }
+
+
+    function checkTicket(id) {
+
+      id = id.trim().toUpperCase();
+
+      var callbackName =
+        "checkInCallback_" + Date.now();
+
+      window[callbackName] = function(result) {
+
+        delete window[callbackName];
+
+        var script =
+          document.getElementById(callbackName);
+
+        if (script) {
+          script.remove();
+        }
+
+        processing = false;
+
+        handleResult(result);
+      };
+
+      var script = document.createElement("script");
+
+      script.id = callbackName;
+
+      script.src =
+        APPS_SCRIPT_URL +
+        "?action=checkin" +
+        "&id=" +
+        encodeURIComponent(id) +
+        "&callback=" +
+        encodeURIComponent(callbackName);
+
+      script.onerror = function() {
+
+        delete window[callbackName];
+
+        script.remove();
+
+        processing = false;
+
+        showResult(
+          "ERROR",
+          "<div class='big'>CONNECTION ERROR</div>" +
+          "<div class='info'>" +
+          "Could not connect to the check-in system.<br>" +
+          "Please check your internet connection." +
+          "</div>"
+        );
+      };
+
+      document.body.appendChild(script);
+    }
+
+
+    function handleResult(result) {
+
+      if (result.status === "SUCCESS") {
+
+        showResult(
+          "SUCCESS",
+
+          "<div class='big'>✓ VALID TICKET</div>" +
+
+          "<div class='info'>" +
+          "<b>" + escapeHTML(result.name) + "</b><br>" +
+          "Ticket: " + escapeHTML(result.ticketType) + "<br>" +
+          "Registration: " +
+          escapeHTML(result.registrationID) +
+          "<br><br>" +
+          "<b>CHECK-IN SUCCESSFUL</b><br>" +
+          formatTime(result.checkInTime) +
+          "</div>" +
+
+          "<button class='scan-again' onclick='resetScanner()'>" +
+          "SCAN NEXT TICKET" +
+          "</button>"
+        );
+
+      }
+
+      else if (result.status === "ALREADY") {
+
+        showResult(
+          "ALREADY",
+
+          "<div class='big'>⚠ ALREADY CHECKED IN</div>" +
+
+          "<div class='info'>" +
+          "<b>" + escapeHTML(result.name) + "</b><br>" +
+          "Ticket: " + escapeHTML(result.ticketType) + "<br>" +
+          "Registration: " +
+          escapeHTML(result.registrationID) +
+          "<br><br>" +
+          "First check-in:<br>" +
+          formatTime(result.checkInTime) +
+          "</div>" +
+
+          "<button class='scan-again' onclick='resetScanner()'>" +
+          "SCAN NEXT TICKET" +
+          "</button>"
+        );
+
+      }
+
+      else {
+
+        showResult(
+          "INVALID",
+
+          "<div class='big'>✕ INVALID TICKET</div>" +
+
+          "<div class='info'>" +
+          "Registration ID was not found." +
+          "</div>" +
+
+          "<button class='scan-again' onclick='resetScanner()'>" +
+          "TRY AGAIN" +
+          "</button>"
+        );
+      }
+    }
+
+
+    function resetScanner() {
+
+      document.getElementById("result").style.display = "none";
+
+      document.getElementById("manualID").value = "";
+
+      processing = false;
+
+      startScanner();
+    }
+
+
+    function showResult(type, message) {
+
+      var result = document.getElementById("result");
+
+      result.style.display = "block";
+
+      result.className = "";
+
+      if (type === "SUCCESS") {
+        result.classList.add("success");
+      }
+
+      else if (type === "ALREADY") {
+        result.classList.add("already");
+      }
+
+      else if (type === "INVALID") {
+        result.classList.add("invalid");
+      }
+
+      else {
+        result.classList.add("error");
+      }
+
+      result.innerHTML = message;
+    }
+
+
+    function formatTime(time) {
+
+      if (!time) {
+        return "";
+      }
+
+      return new Date(time).toLocaleString();
+    }
+
+
+    function escapeHTML(value) {
+
+      if (value === null || value === undefined) {
+        return "";
+      }
+
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+
+    window.onload = function() {
+      startScanner();
+    };
+
+  </script>
+
+</body>
+</html>
